@@ -1,0 +1,175 @@
+extends layout
+
+mixin description(label,val)
+  dt #{label}
+  dd #{val}
+
+mixin identityMixin(identity)
+  tr(data-id='#{identity.user_id}')
+    td #{identity.provider}
+    td #{identity.user_id}
+    td #{identity.connection}
+    td
+      pre #{JSON.stringify(identity.profileData,null,2)}
+    td
+      button.btn.btn-danger.btn-xs.unlink(onclick='unlinkAccount("#{identity.provider}","#{identity.user_id}")') unlink
+
+extends user-layout
+
+block content
+  script(src="https://cdn.auth0.com/js/lock-9.0.js")
+  script(src="https://code.jquery.com/jquery-2.1.1.min.js")
+  script(src="../Auth0Social.js")
+  script(src="https://cdn.auth0.com/w2/auth0-6.7.js")
+
+
+
+  h2 Welcome #{user.nickname}!
+  .panel.panel-default
+    .panel-heading
+      img(src="#{user.picture}")
+
+    .panel-body
+      dl.dl-horizontal
+        dt email
+        dd #{user.email} &nbsp;
+        dt raw profile
+          dd
+            pre.profile=JSON.stringify(user, null, 2)
+      br
+      .panel.panel-default
+        .panel-heading Linked Accounts
+        if (user.identities.length > 1)
+          table.table.identities
+            thead
+              tr
+                th provider
+                th id
+                th connection
+                th profileData
+                th actions
+            tbody
+            each identity in user.identities
+              if (identity.provider !== user.user_id.split('|')[0] && identity.user_id !== user.user_id.split('|')[1])
+                +identityMixin(identity)
+        else
+          .panel-body
+            p You don't have any accounts linked.
+      br
+      .col-md-5
+        .btn-group
+          if (user.current_login == 'Username-Password-Authentication')
+           - var i = 0
+           - var j = 0
+            if (user.identities.length > 0)
+              each identity in user.identities
+                if (identity.connection == 'google-oauth2')
+                  - i++
+                if (identity.connection == 'facebook')
+                  - j++
+            if(i < 1)
+              button.text-left.btn.btn-primary(onclick="linkPasswordAccount('google-oauth2')")
+                    i.fa.fa-google-plus-square
+                    | Google
+            if(j < 1)
+                button.text-left.btn.btn-primary(onclick="linkPasswordAccount('facebook')")
+                    i.fa.fa-facebook-square
+                    |  Facebook
+          if (user.current_login == 'facebook')
+            - var a = 0
+            - var b = 0
+            if (user.identities.length > 0)
+              each identity in user.identities
+                if (identity.connection == 'google-oauth2')
+                  - a++
+                if (identity.connection == 'Username-Password-Authentication')
+                  - b++
+            if(a < 1)
+              button.text-left.btn.btn-primary(onclick="linkPasswordAccount('google-oauth2')")
+                i.fa.fa-google-plus-square
+                | Google
+            if(b < 1)
+              button.text-left.btn.btn-primary(onclick="linkPasswordAccount('Username-Password-Authentication')")
+                    |  Username-Password User
+          if (user.current_login == 'google-oauth2')
+            - var c = 0
+            - var d = 0
+            if (user.identities.length > 0)
+              each identity in user.identities
+                if (identity.connection == 'facebook')
+                  - c++
+                if (identity.connection == 'Username-Password-Authentication')
+                  - d++
+            if(c < 1)
+                  button.text-left.btn.btn-primary(onclick="linkPasswordAccount('facebook')")
+                    i.fa.fa-facebook-square
+                    |  Facebook
+            if(d < 1)
+                  button.text-left.btn.btn-primary(onclick="linkPasswordAccount('Username-Password-Authentication')")
+                    |  Username-Password User
+
+
+      br
+      a(href='/logout') Logout
+
+block script
+  script.
+    var lockagain = new Auth0Lock('#{env1.AUTH0_CLIENT_ID}', '#{env1.AUTH0_DOMAIN}');
+    user_id="#{user.user_id}";
+    primaryIdToken = "#{primaryIdToken}";
+    var auth0_domain = "#{env1.AUTH0_DOMAIN}";
+
+
+    jQuery(document).ready(function () {
+      var hash = lockagain.parseHash();
+      //handle redirection from iDP after login
+      if (hash) {
+        window.location.hash = ''; //clean hash
+        console.log('hash', hash);
+        if (hash.error) {
+          console.log('There was an error logging in ' + hash.error);
+        } else {
+            if (localStorage.getItem('linking') === 'linking') {
+                //login to 2nd account for linking
+                localStorage.removeItem('linking');
+                linkAccount(hash.id_token, hash.profile.sub);
+            } else {
+                // the hash comes from the site's first time login
+                lock.getProfile(hash.id_token, function (err, profile) {
+                    if (err) {
+                        console.log('There was an error logging in. ' + err);
+                    } else {
+                        // Save the JWT token.
+                        localStorage.setItem('primaryIdToken', hash.id_token);
+                        localStorage.setItem('primary_user_id', profile.user_id);
+                    }
+                });
+            }
+        }
+      }
+    });
+
+    /*
+     * Displays Linked Accounts as table rows in UI
+     */
+    function showLinkedAccounts(identities) {
+        $('table.identities tbody tr').remove();
+        if (identities.length > 1) {
+            $.each(identities, function (index, identity) {
+                if (!isRootIdentity(identity)) {
+                    $('table.identities tbody').append(
+                            `<tr>
+                                    <td>${identity.provider}</td>
+                                    <td>${identity.user_id}</td>
+                                    <td>${identity.connection}</td>
+                                    <td><pre>${JSON.stringify(identity.profileData, null, 2)}</pre></td>
+                                    <td><button onclick="unlinkAccount('${identity.provider}','${identity.user_id}')" class="btn btn-danger">Unlink</button></td>
+                                    </tr>`);
+                }
+            });
+        } else {
+            $('table.identities tbody').append('<tr><td colspan="6">No linked accounts yet...</td></tr>');
+        }
+    }
+
+
